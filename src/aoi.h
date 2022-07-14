@@ -1,11 +1,12 @@
-#ifndef __AOI_H_——
-#define __AOI_H_——
+#ifndef __AOI_H__
+#define __AOI_H__
 #include "lua_kit.h"
 
 #include <set>
 #include <map>
 #include <vector>
 #include <algorithm>
+#include <stdlib.h>
 
 using namespace std;
 
@@ -17,53 +18,68 @@ enum class aoi_type : int
     marker      = 1,    //被观察者
 };
 
+class hot_area
+{
+public:
+    long pos_x;     //位置
+    long pos_y;     //位置
+    long pos_z;     //位置
+    long radius;    //半径
+    long hid;       //hid
+
+    bool in(long x, long y, long z) {
+        return (abs(x - pos_x) < radius || abs(y - pos_y) < radius || abs(z - pos_z) < radius);
+    }
+
+    hot_area(long id, long r, long x, long y, long z) : hid(id), radius(r), pos_x(x), pos_y(y), pos_z(z) {}
+};
+
 class aoi_obj
 {
 public:
     uint64_t eid;
-    size_t grid_x;
-    size_t grid_y;
+    long grid_x;
+    long grid_z;
     aoi_type type;
 
-    void set_grid(size_t x, size_t y) {
+    void set_grid(long x, long z) {
         grid_x = x;
-        grid_y = y;
-    }
-
-    void enter(aoi_obj* obj){
-
-    }
-
-    void leave(aoi_obj* obj){
-        
-    }
-
-    void add_watcher(aoi_obj* obj){
-        
-    }
-    void remove_watcher(aoi_obj* obj){
-        
+        grid_z = z;
     }
 
     aoi_obj(uint64_t id, aoi_type typ) : eid(id), type(typ) {}
 };
 
 typedef set<aoi_obj*> object_set;
-typedef vector<object_set> object_axis;
-typedef vector<object_axis> object_grids;
+
+class aoi_grid
+{
+public:
+    ~aoi_grid() {
+        if (hotarea) {
+            delete hotarea;
+            hotarea = nullptr;
+        }
+    }
+    hot_area* hotarea = nullptr;
+    object_set objs = {};
+};
+
+typedef vector<aoi_grid> grid_axis;
+typedef vector<grid_axis> grid_map;
 
 class aoi
 { 
 public:
-    aoi(lua_State* L, size_t w, size_t h, size_t glen, size_t aoi_len, bool offset) {	
+    aoi(lua_State* L, long w, long h, long glen, long aoi_len, bool offset) {	
         mL = L;
         grid_len = glen;
-        aoi_num = aoi_len;
+        aoi_radius = aoi_len;
         xgrid_num = w / glen;
-        ygrid_num = h / glen;
-        grids.resize(ygrid_num + 1);
-        for (unsigned int i = 0; i <= ygrid_num; i++) {
-            grids[i].resize(xgrid_num + 1);
+        zgrid_num = h / glen;
+        grids.resize(zgrid_num);
+        for (long i = 0; i < zgrid_num; i++) {
+            grids[i].resize(xgrid_num);
         }
         if (offset) {
             offset_w = w / 2;
@@ -77,60 +93,85 @@ public:
             o1.insert(o);
         }
     }
-    size_t convert_x(size_t inoout_x){
+
+    long convert_x(long inoout_x){
         return (inoout_x + offset_w) / grid_len;
     }
 
-    size_t convert_y(size_t inoout_y){
-        return (inoout_y + offset_h) / grid_len;
+    long convert_z(long inoout_z){
+        return (inoout_z + offset_h) / grid_len;
     }
-
-    void get_rect_objects(object_set& objs, size_t minX, size_t maxX, size_t minY, size_t maxY) {
-        for(int y = minY; y <= maxY; y++) {
+    
+    void add_hotarea(long id, long r, long x, long y, long z) {
+        hot_area* hobj = new hot_area(id, r, x, y, z);
+        long grid_num = r / grid_len;
+        long nxgrid = convert_x(x);
+        long nzgrid = convert_z(z);
+        long minX = max<long>(0, nxgrid - grid_num);
+        long maxX = min(xgrid_num, nxgrid + grid_num);
+        long minZ = max<long>(0, nzgrid - grid_num);
+        long maxZ = min(zgrid_num, nzgrid + grid_num);
+        for(int z = minZ; z <= maxZ; z++) {
             for(int x = minX; x <= maxX; x++) {
-                copy(objs, grids[y][x]);
+                grids[nzgrid][nxgrid].hotarea = hobj;
             }
         }
     }
 
-    void get_objects(object_set& objs, size_t nxgrid, size_t nygrid) {
-        size_t minX = max<size_t>(0, nxgrid - aoi_num);
-        size_t maxX = min(xgrid_num + 1, nxgrid + aoi_num);
-        size_t minY = max<size_t>(0, nygrid - aoi_num);
-        size_t maxY = min(ygrid_num + 1, nygrid + aoi_num);
-        get_rect_objects(objs, minX, maxX, minY, maxY);
+    long in_hotarea(aoi_grid& grid, long x, long y, long z) {
+        auto hotarea = grid.hotarea;
+        if (hotarea && hotarea->in(x, y, z)) {
+            return hotarea->hid;
+        }
+        return 0;
+    }
+    
+    void get_rect_objects(object_set& objs, long minX, long maxX, long minZ, long maxZ) {
+        for(int z = minZ; z <= maxZ; z++) {
+            for(int x = minX; x <= maxX; x++) {
+                copy(objs, grids[z][x].objs);
+            }
+        }
     }
 
-    void get_around_objects(object_set& enters, object_set& leaves, size_t oxgrid, size_t oygrid, size_t nxgrid, size_t nygrid) {
-        size_t offsetX = nxgrid - oxgrid;
-        size_t offsetY = nygrid - oygrid;
+    void get_objects(object_set& objs, long nxgrid, long nzgrid) {
+        long minX = max<long>(0, nxgrid - aoi_radius);
+        long maxX = min(xgrid_num, nxgrid + aoi_radius);
+        long minZ = max<long>(0, nzgrid - aoi_radius);
+        long maxZ = min(zgrid_num, nzgrid + aoi_radius);
+        get_rect_objects(objs, minX, maxX, minZ, maxZ);
+    }
+
+    void get_around_objects(object_set& enters, object_set& leaves, long oxgrid, long ozgrid, long nxgrid, long nzgrid) {
+        long offsetX = nxgrid - oxgrid;
+        long offsetZ = nzgrid - ozgrid;
         if (offsetX < 0) {
-            get_rect_objects(enters, nxgrid - aoi_num, oxgrid - aoi_num, max<size_t>(0, nygrid - aoi_num), min(ygrid_num + 1, nygrid + aoi_num));
-            get_rect_objects(leaves, nxgrid + aoi_num, oxgrid + aoi_num, max<size_t>(0, oygrid - aoi_num), min(ygrid_num + 1, oygrid + aoi_num));
+            get_rect_objects(enters, nxgrid - aoi_radius, oxgrid - aoi_radius, max<long>(0, nzgrid - aoi_radius), min(zgrid_num, nzgrid + aoi_radius));
+            get_rect_objects(leaves, nxgrid + aoi_radius, oxgrid + aoi_radius, max<long>(0, ozgrid - aoi_radius), min(zgrid_num, ozgrid + aoi_radius));
         }
         else if (offsetX > 0){
-            get_rect_objects(enters, oxgrid + aoi_num, nxgrid + aoi_num, max<size_t>(0, nygrid - aoi_num), min(ygrid_num + 1, nygrid + aoi_num));
-            get_rect_objects(leaves, oxgrid - aoi_num, nxgrid - aoi_num, max<size_t>(0, oygrid - aoi_num), min(ygrid_num + 1, oygrid + aoi_num));
+            get_rect_objects(enters, oxgrid + aoi_radius, nxgrid + aoi_radius, max<long>(0, nzgrid - aoi_radius), min(zgrid_num, nzgrid + aoi_radius));
+            get_rect_objects(leaves, oxgrid - aoi_radius, nxgrid - aoi_radius, max<long>(0, ozgrid - aoi_radius), min(zgrid_num, ozgrid + aoi_radius));
         }
-        if (offsetY < 0) {
-            get_rect_objects(enters, max<size_t>(0, nxgrid - aoi_num), min(xgrid_num + 1, nxgrid + aoi_num), nygrid - aoi_num, oygrid - aoi_num);
-            get_rect_objects(leaves, max<size_t>(0, oxgrid - aoi_num), min(xgrid_num + 1, oxgrid + aoi_num), nygrid + aoi_num, oygrid + aoi_num);
+        if (offsetZ < 0) {
+            get_rect_objects(enters, max<long>(0, nxgrid - aoi_radius), min(xgrid_num, nxgrid + aoi_radius), nzgrid - aoi_radius, ozgrid - aoi_radius);
+            get_rect_objects(leaves, max<long>(0, oxgrid - aoi_radius), min(xgrid_num, oxgrid + aoi_radius), nzgrid + aoi_radius, ozgrid + aoi_radius);
         }
-        else if (offsetY > 0){
-            get_rect_objects(enters, max<size_t>(0, nxgrid - aoi_num), min(xgrid_num + 1, nxgrid + aoi_num), oygrid + aoi_num, nygrid + aoi_num);
-            get_rect_objects(leaves, max<size_t>(0, oxgrid - aoi_num), min(xgrid_num + 1, oxgrid + aoi_num), oygrid - aoi_num, nygrid - aoi_num);
+        else if (offsetZ > 0){
+            get_rect_objects(enters, max<long>(0, nxgrid - aoi_radius), min(xgrid_num, nxgrid + aoi_radius), ozgrid + aoi_radius, nzgrid + aoi_radius);
+            get_rect_objects(leaves, max<long>(0, oxgrid - aoi_radius), min(xgrid_num, oxgrid + aoi_radius), ozgrid - aoi_radius, nzgrid - aoi_radius);
         }
     }
 
-    bool attach(aoi_obj* obj, size_t x, size_t y){
-        int nxgrid_num = convert_x(x);
-        int nygrid_num = convert_y(y);
-        if ((nxgrid_num < 0) || (nxgrid_num > xgrid_num) || (nygrid_num < 0) || (nygrid_num > ygrid_num)) {
+    bool attach(aoi_obj* obj, long x, long z){
+        long nxgrid = convert_x(x);
+        long nzgrid = convert_z(z);
+        if ((nxgrid < 0) || (nxgrid > xgrid_num) || (nzgrid < 0) || (nzgrid > zgrid_num)) {
             return false;
         }
         //查询节点
         object_set objs;
-        get_objects(objs, nxgrid_num, nygrid_num);
+        get_objects(objs, nxgrid, nzgrid);
         //消息通知
         luakit::kit_state kit_state(mL);
         for (auto cobj : objs) {
@@ -142,29 +183,29 @@ public:
             }
         }
         //放入格子
-        obj->set_grid(nxgrid_num, nygrid_num);
-        grids[nygrid_num][nxgrid_num].insert(obj);
+        obj->set_grid(nxgrid, nzgrid);
+        grids[nzgrid][nxgrid].objs.insert(obj);
         return true;
     }
 
     bool detach(aoi_obj* obj) {
-        grids[obj->grid_y][obj->grid_x].erase(obj);
+        grids[obj->grid_z][obj->grid_x].objs.erase(obj);
         return true;
     }
 
-    bool move(aoi_obj* obj, size_t x, size_t y) {
-        int nxgrid_num = convert_x(x);
-        int nygrid_num = convert_y(y);
-        if ((nxgrid_num < 0) || (nxgrid_num > xgrid_num) || (nygrid_num < 0) || (nygrid_num > ygrid_num)) {
-            return false;
+    long move(aoi_obj* obj, long x, long y, long z) {
+        long nxgrid = convert_x(x);
+        long nzgrid = convert_z(z);
+        if ((nxgrid < 0) || (nxgrid > xgrid_num) || (nzgrid < 0) || (nzgrid > zgrid_num)) {
+            return -1;
         }
-        if (nxgrid_num == obj->grid_x && nygrid_num == obj->grid_y){
-            return false;
+        if (nxgrid == obj->grid_x && nzgrid == obj->grid_z){
+            return 0;
         }
-        grids[obj->grid_y][obj->grid_x].erase(obj);
+        grids[obj->grid_z][obj->grid_x].objs.erase(obj);
         //消息通知
         object_set enters, leaves;
-        get_around_objects(enters, leaves, obj->grid_x,  obj->grid_y, nxgrid_num, nygrid_num);
+        get_around_objects(enters, leaves, obj->grid_x,  obj->grid_z, nxgrid, nzgrid);
         //进入视野
         luakit::kit_state kit_state(mL);
         for (auto cobj : enters) {
@@ -184,20 +225,21 @@ public:
                 kit_state.object_call(this, "on_leave", nullptr, std::tie(), obj->eid, cobj->eid);
             } 
         }
-        obj->set_grid(nxgrid_num, nygrid_num);
-        grids[nygrid_num][nxgrid_num].insert(obj);
-        return true;
+        aoi_grid& grid = grids[nzgrid][nxgrid];
+        obj->set_grid(nxgrid, nzgrid);
+        grid.objs.insert(obj);
+        return in_hotarea(grid, x, y, z);
     }
 
 private:
     lua_State* mL;
-    size_t offset_w = 0;    //x轴坐标偏移
-    size_t offset_h = 0;    //y轴坐标偏移
-    size_t grid_len = 50;   //格子长度
-    size_t xgrid_num = 1;   //x轴的格子数
-    size_t ygrid_num = 1;   //y轴的格子数
-    size_t aoi_num = 1;     //视野格子数
-    object_grids grids;     //二维数组保存将地图xy轴切割后的格子
+    long offset_w = 0;    //x轴坐标偏移
+    long offset_h = 0;    //y轴坐标偏移
+    long grid_len = 50;   //格子长度
+    long xgrid_num = 1;   //x轴的格子数
+    long zgrid_num = 1;   //y轴的格子数
+    long aoi_radius = 1;    //视野格子数
+    grid_map grids;         //二维数组保存将地图xy轴切割后的格子
 };
 
 }

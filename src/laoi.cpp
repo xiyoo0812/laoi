@@ -4,11 +4,11 @@
 #include "aoi.h"
 
 namespace laoi {
-    static aoi_obj* create_object(uint64_t id, size_t typ) {
+    static aoi_obj* create_object(uint64_t id, long typ) {
         return new aoi_obj(id, (aoi_type)typ);
     }
 
-    static aoi* create_aoi(lua_State* L, size_t w, size_t h, size_t grid, size_t aoi_len, bool offset) {
+    static aoi* create_aoi(lua_State* L, long w, long h, long grid, long aoi_len, bool offset) {
         return new aoi(L, w, h, grid, aoi_len, offset);
     }
 
@@ -17,11 +17,13 @@ namespace laoi {
         auto llaoi = kit_state.new_table();
         llaoi.set_function("create_aoi", create_aoi);
         llaoi.set_function("create_object", create_object);
+        llaoi.new_enum("aoi_type", "watcher", aoi_type::watcher, "marker", aoi_type::marker);
         kit_state.new_class<aoi_obj>();
         kit_state.new_class<aoi>(
             "move", &aoi::move,
             "attach", &aoi::attach,
-            "detach", &aoi::detach
+            "detach", &aoi::detach,
+            "add_hotarea", &aoi::add_hotarea
             );
         return llaoi;
     }
