@@ -1,5 +1,5 @@
 # laoi
-一个提供给C/Lua使用的内存buffer操作库。
+一个提供给C/Lua使用的MMO视野管理(AOI)组件。
 
 # 依赖
 - [lua](https://github.com/xiyoo0812/lua.git)5.2以上
