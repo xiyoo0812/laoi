@@ -88,17 +88,16 @@ public:
         long maxX = min(xgrid_num, nxgrid + grid_num);
         long minZ = max<long>(0, nzgrid - grid_num);
         long maxZ = min(zgrid_num, nzgrid + grid_num);
-        for(int z = minZ; z <= maxZ; z++) {
-            for(int x = minX; x <= maxX; x++) {
+        for(int z = minZ; z < maxZ; z++) {
+            for(int x = minX; x < maxX; x++) {
                 grids[z][x].hotarea_id = id;
-                printf("map add_hotarea: %d-%d-%d\n", id, z, x);
             }
         }
     }
     
     void get_rect_objects(object_set& objs, long minX, long maxX, long minZ, long maxZ) {
-        for(int z = minZ; z <= maxZ; z++) {
-            for(int x = minX; x <= maxX; x++) {
+        for(int z = minZ; z < maxZ; z++) {
+            for(int x = minX; x < maxX; x++) {
                 copy(objs, grids[z][x].objs);
             }
         }
