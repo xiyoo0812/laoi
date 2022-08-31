@@ -142,6 +142,7 @@ public:
         //消息通知
         luakit::kit_state kit_state(mL);
         for (auto cobj : objs) {
+            if (obj == cobj) continue;
             if (cobj->type == aoi_type::watcher) {
                 kit_state.object_call(this, "on_enter", nullptr, std::tie(), cobj->eid, obj->eid);
             }
