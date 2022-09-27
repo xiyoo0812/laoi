@@ -83,17 +83,19 @@ public:
         }
     }
 
-    uint16_t convert_x(uint16_t inoout_x){
-        return (inoout_x + offset_w) / grid_len;
+    uint16_t convert_x(int32_t inoout_x, uint16_t glen){
+        return (inoout_x + offset_w) / glen;
     }
 
-    uint16_t convert_z(uint16_t inoout_z){
-        return (inoout_z + offset_h) / grid_len;
+    uint16_t convert_z(int32_t inoout_z, uint16_t glen){
+        return (inoout_z + offset_h) / glen;
     }
 
-    uint16_t find_hotarea_id(uint16_t x, uint16_t z) {
-        uint32_t key = x << 16 | z;
-        auto it = hotmaps.find(key);
+    uint16_t find_hotarea_id(int32_t x, int32_t z) {
+        uint16_t nxgrid = convert_x(x, grid_hot);
+        uint16_t nzgrid = convert_z(z, grid_hot);
+        uint32_t index = nxgrid << 16 | nzgrid;
+        auto it = hotmaps.find(index);
         if (it != hotmaps.end()) {
             return it->second;
         }
@@ -109,19 +111,11 @@ public:
         return obj;
     }
     
-    void add_hotarea(uint16_t id, uint32_t r, uint32_t x, uint32_t z) {
-        uint16_t grid_num = r / grid_len;
-        uint16_t nxgrid = convert_x(x);
-        uint16_t nzgrid = convert_z(z);
-        uint16_t minX = max<uint16_t>(zero, nxgrid - grid_num);
-        uint16_t minZ = max<uint16_t>(zero, nzgrid - grid_num);
-        uint16_t maxX = min<uint16_t>(xgrid_num, nxgrid + grid_num);
-        uint16_t maxZ = min<uint16_t>(zgrid_num, nzgrid + grid_num);
-        for(uint16_t z = minZ; z < maxZ; z++) {
-            for(uint16_t x = minX; x < maxX; x++) {
-                hotmaps[x << 16 | z] = id;
-            }
-        }
+    void add_hotarea(uint16_t id, uint16_t ghl, int32_t x, int32_t z) {
+        grid_hot = ghl;
+        uint16_t nxgrid = convert_x(x, ghl);
+        uint16_t nzgrid = convert_z(z, ghl);
+        hotmaps[nxgrid << 16 | nzgrid] = id;
     }
     
     void get_rect_objects(object_set& objs, uint16_t lx, uint16_t rx, uint16_t lz, uint16_t rz) {
@@ -137,8 +131,8 @@ public:
     }
 
     void get_around_objects(object_set& enters, object_set& leaves, uint16_t oxgrid, uint16_t ozgrid, uint16_t nxgrid, uint16_t nzgrid) {
-        uint16_t offsetX = nxgrid - oxgrid;
-        uint16_t offsetZ = nzgrid - ozgrid;
+        int16_t offsetX = nxgrid - oxgrid;
+        int16_t offsetZ = nzgrid - ozgrid;
         if (offsetX < 0) {
             get_rect_objects(enters, nxgrid - aoi_radius, oxgrid - aoi_radius, nzgrid - aoi_radius, nzgrid + aoi_radius);
             get_rect_objects(leaves, nxgrid + aoi_radius, oxgrid + aoi_radius, ozgrid - aoi_radius, ozgrid + aoi_radius);
@@ -157,9 +151,9 @@ public:
         }
     }
 
-    bool attach(aoi_obj* obj, uint32_t x, uint32_t z){
-        uint16_t nxgrid = convert_x(x);
-        uint16_t nzgrid = convert_z(z);
+    bool attach(aoi_obj* obj, int32_t x, int32_t z){
+        uint16_t nxgrid = convert_x(x, grid_len);
+        uint16_t nzgrid = convert_z(z, grid_len);
         if ((nxgrid < 0) || (nxgrid >= xgrid_num) || (nzgrid < 0) || (nzgrid >= zgrid_num)) {
             return false;
         }
@@ -181,6 +175,7 @@ public:
         insert(obj, nxgrid, nzgrid);
         return true;
     }
+
     void insert(aoi_obj* obj, uint16_t nxgrid, uint16_t nzgrid) {
         obj->set_grid(nxgrid, nzgrid);
         auto cur_set = grids[nzgrid][nxgrid];
@@ -201,9 +196,9 @@ public:
         }
     }
 
-    uint32_t move(aoi_obj* obj, uint32_t x, uint32_t z) {
-        uint16_t nxgrid = convert_x(x);
-        uint16_t nzgrid = convert_z(z);
+    uint32_t move(aoi_obj* obj, int32_t x, int32_t z) {
+        uint16_t nxgrid = convert_x(x, grid_len);
+        uint16_t nzgrid = convert_z(z, grid_len);
         if ((nxgrid < 0) || (nxgrid >= xgrid_num) || (nzgrid < 0) || (nzgrid >= zgrid_num)) {
             return -1;
         }
@@ -235,15 +230,16 @@ public:
         }
         //插入
         insert(obj, nxgrid, nzgrid);
-        return find_hotarea_id(nxgrid, nzgrid);
+        return find_hotarea_id(x, z);
     }
 
 private:
     lua_State* mL;
     bool dynamic = false;
-    uint32_t offset_w = 0;      //x轴坐标偏移
-    uint32_t offset_h = 0;      //y轴坐标偏移
-    uint16_t grid_len = 50;     //格子长度
+    int32_t offset_w = 0;       //x轴坐标偏移
+    int32_t offset_h = 0;       //y轴坐标偏移
+    uint16_t grid_len = 1;      //AOI格子长度
+    uint16_t grid_hot = 1;      //热区格子长度
     uint16_t xgrid_num = 1;     //x轴的格子数
     uint16_t zgrid_num = 1;     //y轴的格子数
     uint16_t aoi_radius = 1;    //视野格子数
