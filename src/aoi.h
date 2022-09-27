@@ -53,10 +53,10 @@ public:
         xgrid_num = w / glen;
         zgrid_num = h / glen;
         grids.resize(zgrid_num);
-        for (auto garray : grids) {
-            garray.resize(xgrid_num);
-            for (uint16_t j = 0; j < xgrid_num; j++) {
-                garray[j] = (!dynamic ) ? get_grid_set() : nullptr;
+        for (int i = 0; i < zgrid_num; ++i) {
+            grids[i].resize(xgrid_num);
+            for (int j = 0; j < zgrid_num; ++j) {
+                grids[i][j] = (!dynamic ) ? get_grid_set() : nullptr;
             }
         }
         if (offset) {
@@ -73,7 +73,6 @@ public:
                 }
             }
         }
-        grids.clear();
     };
 
     void copy(object_set& dst, object_set* src) {
