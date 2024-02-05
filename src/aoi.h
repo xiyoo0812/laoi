@@ -160,7 +160,7 @@ namespace laoi {
             if ((nxgrid >= m_xgrid_num) || (nzgrid >= m_zgrid_num)) {
                 return false;
             }
-            if (obj->aoi_inst && obj->aoi_inst != this) {
+            if (obj->aoi_inst) {
                 obj->aoi_inst->detach(L, obj);
             }
             obj->aoi_inst = this;
